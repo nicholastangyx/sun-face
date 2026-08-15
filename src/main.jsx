@@ -32,6 +32,42 @@ function formatTime(value) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+const landMasses = [
+  { name: 'North America', points: [[72,-165],[70,-140],[60,-130],[52,-125],[48,-123],[35,-117],[25,-105],[18,-92],[28,-82],[45,-82],[52,-60],[62,-65],[70,-85]] },
+  { name: 'South America', points: [[12,-81],[5,-78],[-5,-80],[-18,-72],[-35,-70],[-55,-68],[-52,-58],[-35,-52],[-12,-45],[5,-50],[12,-62]] },
+  { name: 'Europe', points: [[72,-10],[70,25],[62,40],[52,32],[48,20],[42,28],[36,18],[38,5],[44,-8],[55,-5],[62,-20]] },
+  { name: 'Africa', points: [[36,-17],[36,10],[32,32],[22,42],[5,50],[-15,45],[-35,28],[-35,12],[-25,-5],[-5,-15],[16,-17]] },
+  { name: 'Asia', points: [[72,35],[70,90],[62,145],[52,160],[42,142],[28,135],[10,120],[8,95],[20,75],[32,55],[45,38],[58,30]] },
+  { name: 'Australia', points: [[-12,114],[-16,145],[-28,153],[-40,145],[-42,120],[-30,112]] },
+  { name: 'Greenland', points: [[82,-72],[76,-42],[62,-45],[60,-65],[70,-75]] }
+];
+
+function pointOnGlobe(latitude, longitude, radius) {
+  const lat = THREE.MathUtils.degToRad(latitude);
+  const lon = THREE.MathUtils.degToRad(longitude);
+  return new THREE.Vector3(Math.cos(lat) * Math.cos(lon) * radius, Math.sin(lat) * radius, Math.cos(lat) * Math.sin(lon) * radius);
+}
+
+function createLandPatch(points) {
+  const center = points.reduce((sum, [lat, lon]) => ({ lat: sum.lat + lat, lon: sum.lon + lon }), { lat: 0, lon: 0 });
+  center.lat /= points.length; center.lon /= points.length;
+  const centerLat = THREE.MathUtils.degToRad(center.lat);
+  const shape = new THREE.Shape();
+  points.forEach(([lat, lon], index) => {
+    const x = THREE.MathUtils.degToRad(lon - center.lon) * Math.cos(centerLat) * 1.35;
+    const y = THREE.MathUtils.degToRad(lat - center.lat) * 1.35;
+    if (index === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+  });
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.018, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.008, bevelSegments: 1 });
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: '#a6dc45', roughness: 0.9, metalness: 0.02 }));
+  const normal = pointOnGlobe(center.lat, center.lon, 1).normalize();
+  mesh.position.copy(pointOnGlobe(center.lat, center.lon, 1.355));
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+  mesh.castShadow = true;
+  return mesh;
+}
+
 function Globe({ onSelect }) {
   const mount = useRef(null);
   const sceneRef = useRef({});
@@ -50,8 +86,9 @@ function Globe({ onSelect }) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     el.appendChild(renderer.domElement);
     const group = new THREE.Group();
-    const globe = new THREE.Mesh(new THREE.SphereGeometry(1.35, 48, 32), new THREE.MeshStandardMaterial({ color: '#204a58', roughness: 0.92, metalness: 0.02 }));
+    const globe = new THREE.Mesh(new THREE.SphereGeometry(1.35, 48, 32), new THREE.MeshStandardMaterial({ color: '#078bd0', roughness: 0.7, metalness: 0.02 }));
     group.add(globe);
+    landMasses.forEach(({ points }) => group.add(createLandPatch(points)));
     const atmosphere = new THREE.Mesh(new THREE.SphereGeometry(1.42, 48, 32), new THREE.MeshBasicMaterial({ color: '#62b7c5', transparent: true, opacity: 0.09, side: THREE.BackSide }));
     group.add(atmosphere);
     const latMat = new THREE.LineBasicMaterial({ color: '#90d6d0', transparent: true, opacity: 0.16 });
