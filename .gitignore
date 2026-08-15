@@ -1,0 +1,7 @@
+node_modules
+dist
+.DS_Store
+.bun-cache
+.bun-temp
+vite.log
+vite.error.log
