@@ -48,15 +48,22 @@ const LAND_MAT = new THREE.MeshStandardMaterial({ color: '#8b7fd0', roughness: 0
 function geoRingMesh(ring) {
   if (ring.length < 3) return null;
   // Skip rings that cross the antimeridian — centroid-offset approach breaks for them
-  let minLon = Infinity, maxLon = -Infinity;
-  ring.forEach(([lon]) => { if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon; });
-  if (maxLon - minLon > 180) return null;
+  let previousLongitude = ring[0][0];
+  const continuousRing = ring.map(([longitude, latitude], index) => {
+    let continuousLongitude = longitude;
+    if (index) {
+      while (continuousLongitude - previousLongitude > 180) continuousLongitude -= 360;
+      while (continuousLongitude - previousLongitude < -180) continuousLongitude += 360;
+    }
+    previousLongitude = continuousLongitude;
+    return [continuousLongitude, latitude];
+  });
   // Centre the ring to reduce floating-point spread inside ShapeGeometry
   let clon = 0, clat = 0;
-  ring.forEach(([lon, lat]) => { clon += lon; clat += lat; });
-  clon /= ring.length; clat /= ring.length;
+  continuousRing.forEach(([lon, lat]) => { clon += lon; clat += lat; });
+  clon /= continuousRing.length; clat /= continuousRing.length;
   const shape = new THREE.Shape();
-  ring.forEach(([lon, lat], i) => {
+  continuousRing.forEach(([lon, lat], i) => {
     if (i === 0) shape.moveTo(lon - clon, lat - clat);
     else shape.lineTo(lon - clon, lat - clat);
   });
