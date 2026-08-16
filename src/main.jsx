@@ -43,6 +43,10 @@ const LAND_MAT = new THREE.MeshStandardMaterial({ color: '#8b7fd0', roughness: 0
 // Build a sphere-projected mesh from a GeoJSON ring [[lon,lat], ...]
 function geoRingMesh(ring) {
   if (ring.length < 3) return null;
+  // Skip rings that cross the antimeridian — centroid-offset approach breaks for them
+  let minLon = Infinity, maxLon = -Infinity;
+  ring.forEach(([lon]) => { if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon; });
+  if (maxLon - minLon > 180) return null;
   // Centre the ring to reduce floating-point spread inside ShapeGeometry
   let clon = 0, clat = 0;
   ring.forEach(([lon, lat]) => { clon += lon; clat += lat; });
@@ -64,9 +68,13 @@ function geoRingMesh(ring) {
     tri = next;
   }
   const out = [], nrm = [];
-  for (let i = 0; i < tri.length; i += 3) {
-    const v = gpt(tri[i+1] + clat, tri[i] + clon, 1.385); // gpt(lat, lon, r)
-    out.push(v.x, v.y, v.z); nrm.push(...v.clone().normalize().toArray());
+  for (let i = 0; i < tri.length; i += 9) {
+    // Spherical projection reverses the winding produced in lon/lat space.
+    // Emit each triangle in reverse order so its front face points outward.
+    for (const j of [i, i + 6, i + 3]) {
+      const v = gpt(tri[j + 1] + clat, tri[j] + clon, 1.385); // gpt(lat, lon, r)
+      out.push(v.x, v.y, v.z); nrm.push(...v.clone().normalize().toArray());
+    }
   }
   if (out.length === 0) return null;
   const geo = new THREE.BufferGeometry();
