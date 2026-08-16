@@ -34,10 +34,13 @@ html { scroll-behavior: smooth; }
   background: #161826;
   border: 1.5px solid #9184d9;
   cursor: pointer;
-  border: none;
 }
 
 @keyframes sunPulse {
   0%, 100% { opacity: .35; transform: scale(1); }
   50%       { opacity: 1;   transform: scale(1.35); }
 }
+
+.sf-btn-play:hover { background: rgba(145,132,217,.12); }
+.sf-btn-play:active { background: rgba(145,132,217,.22); }
+.sf-link-change:hover { background: rgba(145,132,217,.12); }

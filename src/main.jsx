@@ -86,6 +86,7 @@ function Globe({ location, onSelect }) {
     const T = THREE;
     const scene = new T.Scene();
     const camera = new T.PerspectiveCamera(32, el.clientWidth / el.clientHeight, 0.1, 100);
+    camera.position.set(0, 0.2, 4.1);
     const renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(el.clientWidth, el.clientHeight);
@@ -384,10 +385,7 @@ function App() {
           <span style={{ fontWeight: 500, fontSize: 15, letterSpacing: '.22em' }}>SUNFACE</span>
         </div>
         <span style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#9397ab' }}>{navStatus}</span>
-        {location
-          ? <button onClick={() => setLocation(null)} style={{ fontSize: 13, fontWeight: 500, color: '#9184d9', background: 'transparent', border: '1px solid #9184d9', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>Change the place</button>
-          : <a href="#study" style={{ fontSize: 13, fontWeight: 500, color: '#9184d9', border: '1px solid #9184d9', borderRadius: 8, padding: '5px 12px', textDecoration: 'none', display: 'inline-block' }}>Study the light</a>
-        }
+        <a href="#study" style={{ fontSize: 13, fontWeight: 500, color: '#9184d9', border: '1px solid #9184d9', borderRadius: 8, padding: '5px 12px', textDecoration: 'none', display: 'inline-block' }}>Study the light</a>
       </nav>
 
       {/* Landing */}
@@ -416,7 +414,7 @@ function App() {
 
       {/* Study */}
       <section id="study" style={{ padding: '0 45px 67px', scrollMarginTop: 70 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 22, paddingBottom: 22, marginBottom: 34, borderBottom: '1px solid rgba(233,233,237,.1)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 22, paddingBottom: 22, marginBottom: 34, background: 'linear-gradient(to right, transparent, rgba(233,233,237,.16) 48px, rgba(233,233,237,.16) calc(100% - 48px), transparent) no-repeat bottom / 100% 1px' }}>
           <div>
             <p style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#9184d9', margin: '0 0 11px' }}>02 / study the light</p>
             <h2 style={{ fontSize: 'clamp(28px,3.2vw,42px)', fontWeight: 500, letterSpacing: '-.025em', margin: 0, fontFamily: 'inherit' }}>{coords}</h2>
@@ -469,7 +467,7 @@ function App() {
                 <span>{formatTime(sun.sunrise)} sunrise</span>
                 <span>{formatTime(sun.sunset)} sunset</span>
               </div>
-              <button onClick={() => setPlaying(p => !p)} style={{ width: '100%', marginTop: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, fontSize: 14, color: '#9184d9', background: 'transparent', border: '1px solid #9184d9', borderRadius: 8, padding: '9px 12px' }}>
+              <button onClick={() => setPlaying(p => !p)} className="sf-btn-play" style={{ width: '100%', marginTop: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, fontSize: 14, color: '#9184d9', background: 'transparent', border: '1px solid #9184d9', borderRadius: 8, padding: '9px 12px' }}>
                 {playing ? 'Pause sunlight' : 'Play sunlight'}
               </button>
             </div>
@@ -486,7 +484,7 @@ function App() {
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9184d9', boxShadow: '0 0 10px #9184d9', animation: 'sunPulse 2.4s ease-in-out infinite', display: 'inline-block' }} />
               live sunlight preview
             </div>
-            <a href="#top" onClick={e => { e.preventDefault(); setLocation(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} style={{ position: 'absolute', top: 14, right: 17, fontSize: 12, fontWeight: 500, color: '#9184d9', textDecoration: 'none', border: '1px solid rgba(233,233,237,.16)', borderRadius: 8, padding: '6px 12px', background: 'rgba(22,24,38,.7)', display: 'inline-block' }}>
+            <a href="#top" onClick={e => { e.preventDefault(); setLocation(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} className="sf-link-change" style={{ position: 'absolute', top: 14, right: 17, fontSize: 12, fontWeight: 500, color: '#9184d9', textDecoration: 'none', border: '1px solid rgba(233,233,237,.16)', borderRadius: 8, padding: '6px 12px', background: 'rgba(22,24,38,.7)', display: 'inline-block' }}>
               Change location
             </a>
             <div style={{ position: 'absolute', left: 17, bottom: 17, right: 17, display: 'flex', gap: 22, fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: '#75798c', pointerEvents: 'none' }}>
@@ -514,7 +512,7 @@ function App() {
       </section>
 
       {/* Footer */}
-      <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 22, padding: '34px 45px', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#75798c', borderTop: '1px solid rgba(233,233,237,.08)' }}>
+      <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 22, padding: '34px 45px', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#75798c' }}>
         <span>sunface / 2026</span>
         <span>light is a place you can visit</span>
       </footer>
