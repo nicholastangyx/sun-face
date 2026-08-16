@@ -23,18 +23,22 @@ function sunAt(latitude, month, day, solarTime) {
   const elevation = Math.asin(Math.max(-1, Math.min(1, sinE))) / r;
   const azimuth = (Math.atan2(Math.sin(hourAngle), Math.cos(hourAngle) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat)) / r + 180 + 360) % 360;
   const rawCosH = -Math.tan(lat) * Math.tan(dec);
-  const daylight = rawCosH >= 1 ? 0 : rawCosH <= -1 ? 24 : Math.acos(rawCosH) / r / 15;
-  return { elevation, azimuth, sunrise: 12 - daylight, sunset: 12 + daylight, daylight };
+  if (rawCosH >= 1) return { elevation, azimuth, sunrise: null, sunset: null, daylight: 0, polarNight: true, polarDay: false };
+  if (rawCosH <= -1) return { elevation, azimuth, sunrise: 0, sunset: 24, daylight: 24, polarNight: false, polarDay: true };
+  const halfDaylight = Math.acos(rawCosH) / r / 15;
+  return { elevation, azimuth, sunrise: 12 - halfDaylight, sunset: 12 + halfDaylight, daylight: halfDaylight * 2, polarNight: false, polarDay: false };
 }
 
 function formatTime(v) {
+  if (v == null || !Number.isFinite(v)) return '—';
   const t = Math.round(v * 60), h = Math.floor(t / 60), m = t % 60;
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
 }
 
 function gpt(la, lo, rad) {
   const a = THREE.MathUtils.degToRad(la), b = THREE.MathUtils.degToRad(lo);
-  return new THREE.Vector3(Math.cos(a) * Math.cos(b) * rad, Math.sin(a) * rad, Math.cos(a) * Math.sin(b) * rad);
+  // Greenwich faces the camera (+Z), with east on the viewer's right.
+  return new THREE.Vector3(Math.cos(a) * Math.sin(b) * rad, Math.sin(a) * rad, Math.cos(a) * Math.cos(b) * rad);
 }
 
 // Shared land material (created once, reused for all polygons)
@@ -69,9 +73,9 @@ function geoRingMesh(ring) {
   }
   const out = [], nrm = [];
   for (let i = 0; i < tri.length; i += 9) {
-    // Spherical projection reverses the winding produced in lon/lat space.
-    // Emit each triangle in reverse order so its front face points outward.
-    for (const j of [i, i + 6, i + 3]) {
+    // The Greenwich-centred projection preserves lon/lat winding, so front
+    // faces remain outward for correct land lighting.
+    for (const j of [i, i + 3, i + 6]) {
       const v = gpt(tri[j + 1] + clat, tri[j] + clon, 1.385); // gpt(lat, lon, r)
       out.push(v.x, v.y, v.z); nrm.push(...v.clone().normalize().toArray());
     }
@@ -136,12 +140,11 @@ function Globe({ location, onSelect }) {
     const grat = new T.Group();
     const lineMat = new T.LineBasicMaterial({ color: '#b5abfc', transparent: true, opacity: 0.14 });
     for (let lat = -60; lat <= 60; lat += 30) {
-      const r = Math.cos(T.MathUtils.degToRad(lat)) * 1.356, y = Math.sin(T.MathUtils.degToRad(lat)) * 1.356;
-      const ps = Array.from({ length: 97 }, (_, i) => new T.Vector3(Math.cos(i/96*Math.PI*2)*r, y, Math.sin(i/96*Math.PI*2)*r));
+      const ps = Array.from({ length: 97 }, (_, i) => gpt(lat, i / 96 * 360, 1.356));
       grat.add(new T.Line(new T.BufferGeometry().setFromPoints(ps), lineMat));
     }
     for (let lon = 0; lon < 180; lon += 30) {
-      const ps = Array.from({ length: 97 }, (_, i) => { const a = i/96*Math.PI*2; return new T.Vector3(Math.sin(a)*1.356*Math.cos(T.MathUtils.degToRad(lon)), Math.cos(a)*1.356, Math.sin(a)*1.356*Math.sin(T.MathUtils.degToRad(lon))); });
+      const ps = Array.from({ length: 97 }, (_, i) => gpt(i / 96 * 360 - 90, lon, 1.356));
       grat.add(new T.Line(new T.BufferGeometry().setFromPoints(ps), lineMat));
     }
     group.add(grat);
@@ -188,7 +191,8 @@ function Globe({ location, onSelect }) {
       renderer.setSize(el.clientWidth, el.clientHeight);
       frameGlobe();
     };
-    window.addEventListener('resize', resize);
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(el);
 
     let dragging = false, px = 0, py = 0;
     el.onpointerdown = e => { dragging = false; px = e.clientX; py = e.clientY; ctx.current.spin = false; el.setPointerCapture(e.pointerId); };
@@ -211,7 +215,7 @@ function Globe({ location, onSelect }) {
           const local = ctx.current.group.worldToLocal(hits[0].point.clone());
           onSelect({
             latitude: T.MathUtils.radToDeg(Math.asin(local.y / 1.35)),
-            longitude: T.MathUtils.radToDeg(Math.atan2(local.z, local.x))
+            longitude: T.MathUtils.radToDeg(Math.atan2(local.x, local.z))
           });
         }
       }
@@ -220,7 +224,7 @@ function Globe({ location, onSelect }) {
 
     return () => {
       cancelAnimationFrame(ctx.current.animFrame);
-      window.removeEventListener('resize', resize);
+      resizeObserver.disconnect();
       renderer.dispose();
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement);
     };
@@ -324,7 +328,8 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
       camera.updateProjectionMatrix();
       renderer.setSize(el.clientWidth, el.clientHeight);
     };
-    window.addEventListener('resize', resize);
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(el);
 
     const animate = () => { ctx.current.animFrame = requestAnimationFrame(animate); renderer.render(scene, camera); };
     animate();
@@ -333,7 +338,7 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
 
     return () => {
       cancelAnimationFrame(ctx.current.animFrame);
-      window.removeEventListener('resize', resize);
+      resizeObserver.disconnect();
       renderer.dispose();
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement);
     };
@@ -349,18 +354,28 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     const p = sunPos(sun.elevation, sun.azimuth, 5.5);
     c.light.position.copy(p);
     c.light.color = new T.Color(TONES.Golden);
-    c.light.intensity = sun.elevation > 0 ? 3 : 0.05;
+    const isDaylight = sun.elevation > 0;
+    c.light.intensity = isDaylight ? 3 : 0.05;
     c.sunMesh.position.copy(p);
     c.glow.position.copy(p);
+    c.sunMesh.visible = isDaylight;
+    c.glow.visible = isDaylight;
 
     const arcKey = `${month}-${day}-${latitude.toFixed(2)}`;
     if (c.arcKey !== arcKey) {
       c.arcKey = arcKey;
-      while (c.arc.children.length) c.arc.remove(c.arc.children[0]);
+      while (c.arc.children.length) {
+        const child = c.arc.children.pop();
+        child.geometry.dispose();
+        child.material.dispose();
+      }
       const pts = [];
-      for (let t = sun.sunrise; t <= sun.sunset; t += (sun.sunset - sun.sunrise) / 48) {
-        const a = sunAt(latitude, month, day, t);
-        pts.push(sunPos(a.elevation, a.azimuth, 5.5));
+      if (!sun.polarNight) {
+        const step = (sun.sunset - sun.sunrise) / 48;
+        for (let t = sun.sunrise; t <= sun.sunset + step / 2; t += step) {
+          const a = sunAt(latitude, month, day, t);
+          pts.push(sunPos(a.elevation, a.azimuth, 5.5));
+        }
       }
       if (pts.length > 1) {
         c.arc.add(new T.Line(
@@ -384,20 +399,29 @@ function App() {
 
   const latitude = location?.latitude ?? 51.5;
   const sun = useMemo(() => sunAt(latitude, month, day, time), [latitude, month, day, time]);
+  const hasDaylight = sun.daylight > 0;
 
   useEffect(() => {
-    if (!playing) return;
+    if (sun.polarNight) {
+      setPlaying(false);
+      return;
+    }
+    setTime(t => Math.min(Math.max(t, sun.sunrise), sun.sunset));
+  }, [latitude, month, day, sun.polarNight, sun.sunrise, sun.sunset]);
+
+  useEffect(() => {
+    if (!playing || !hasDaylight) return;
     const id = setInterval(() => setTime(t => {
       const next = t + 0.05;
       if (next >= sun.sunset) { setPlaying(false); return sun.sunset; }
       return next;
     }), 50);
     return () => clearInterval(id);
-  }, [playing, sun.sunset]);
+  }, [playing, hasDaylight, sun.sunset]);
 
   const chooseMonth = val => {
     const m = Number(val);
-    setMonth(m); setDay(d => Math.min(d, MONTH_DAYS[m - 1])); setTime(12);
+    setMonth(m); setDay(d => Math.min(d, MONTH_DAYS[m - 1])); setPlaying(false); setTime(12);
   };
 
   const pickLocation = loc => {
@@ -414,10 +438,10 @@ function App() {
     : '51.50° N  ·  0.10° W';
 
   return (
-    <div id="top" style={{ minHeight: '100vh', background: '#161826', color: '#e9e9ed', fontFamily: 'Inter, system-ui, sans-serif', overflowX: 'hidden' }}>
+    <div id="top" className="sf-app">
 
       {/* Nav */}
-      <nav style={{ position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 17, padding: '14px 45px', background: 'rgba(22,24,38,.82)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', borderBottom: '1px solid rgba(233,233,237,.08)' }}>
+      <nav className="sf-nav">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 'auto' }}>
           <span style={{ width: 11, height: 11, borderRadius: '50%', background: 'linear-gradient(90deg,#9184d9 50%,transparent 50%)', boxShadow: '0 0 14px rgba(145,132,217,.6)', display: 'inline-block' }} />
           <span style={{ fontWeight: 500, fontSize: 15, letterSpacing: '.22em' }}>SUNFACE</span>
@@ -427,7 +451,7 @@ function App() {
       </nav>
 
       {/* Landing */}
-      <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0,38%) minmax(0,1fr)', alignItems: 'center', gap: 45, padding: '56px 45px 84px', minHeight: 'calc(100vh - 56px)' }}>
+      <section className="sf-hero">
         <div>
           <p style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#9184d9', margin: '0 0 22px' }}>01 / choose a place</p>
           <h1 style={{ fontSize: 'clamp(52px,5.6vw,88px)', fontWeight: 500, lineHeight: 1.02, letterSpacing: '-.035em', margin: '0 0 22px', textWrap: 'pretty', fontFamily: 'inherit' }}>
@@ -441,7 +465,7 @@ function App() {
             drag to rotate · click to select
           </div>
         </div>
-        <div style={{ position: 'relative', height: 'min(640px,72vh)' }}>
+        <div className="sf-globe-panel">
           <Globe location={location} onSelect={pickLocation} />
           <div style={{ position: 'absolute', inset: 'auto 0 0 0', display: 'flex', justifyContent: 'space-between', fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: '#75798c', pointerEvents: 'none' }}>
             <span>earth / 3D</span>
@@ -451,7 +475,7 @@ function App() {
       </section>
 
       {/* Study */}
-      <section id="study" style={{ padding: '0 45px 67px', scrollMarginTop: 70 }}>
+      <section id="study" className="sf-study">
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 22, paddingBottom: 22, marginBottom: 34, background: 'linear-gradient(to right, transparent, rgba(233,233,237,.16) 48px, rgba(233,233,237,.16) calc(100% - 48px), transparent) no-repeat bottom / 100% 1px' }}>
           <div>
             <p style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', color: '#9184d9', margin: '0 0 11px' }}>02 / study the light</p>
@@ -462,10 +486,10 @@ function App() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '300px minmax(0,1fr)', gap: 22, alignItems: 'start' }}>
+        <div className="sf-study-grid">
 
           {/* Controls */}
-          <aside style={{ display: 'flex', flexDirection: 'column', gap: 22, background: '#232532', borderRadius: 14, padding: 22, boxShadow: '0 0 0 1px #3f424d' }}>
+          <aside className="sf-controls" style={{ display: 'flex', flexDirection: 'column', gap: 22, background: '#232532', borderRadius: 14, padding: 22, boxShadow: '0 0 0 1px #3f424d' }}>
 
             {/* Day of year */}
             <div>
@@ -474,7 +498,7 @@ function App() {
                 <select value={month} onChange={e => chooseMonth(e.target.value)} style={{ flex: 1, minHeight: 36, padding: '6px 10px', fontFamily: 'inherit', fontSize: 14, color: '#e9e9ed', background: '#161826', border: '1px solid rgba(233,233,237,.16)', borderRadius: 8, cursor: 'pointer' }}>
                   {MONTHS.map((m, i) => <option value={i+1} key={m}>{m}</option>)}
                 </select>
-                <input type="number" min="1" max={MONTH_DAYS[month-1]} value={day} onChange={e => { setDay(Math.max(1, Math.min(MONTH_DAYS[month-1], Number(e.target.value)))); setTime(12); }} style={{ width: 68, minHeight: 36, padding: '6px 10px', fontFamily: 'inherit', fontSize: 14, color: '#e9e9ed', background: '#161826', border: '1px solid rgba(233,233,237,.16)', borderRadius: 8 }} />
+                <input type="number" min="1" max={MONTH_DAYS[month-1]} value={day} onChange={e => { setDay(Math.max(1, Math.min(MONTH_DAYS[month-1], Number(e.target.value)))); setPlaying(false); setTime(12); }} style={{ width: 68, minHeight: 36, padding: '6px 10px', fontFamily: 'inherit', fontSize: 14, color: '#e9e9ed', background: '#161826', border: '1px solid rgba(233,233,237,.16)', borderRadius: 8 }} />
               </div>
             </div>
 
@@ -500,12 +524,15 @@ function App() {
                 <label style={{ fontSize: 11, letterSpacing: '.1em', textTransform: 'uppercase', color: '#9397ab' }}>Solar time</label>
                 <strong style={{ fontSize: 26, fontWeight: 500, letterSpacing: '-.02em', color: '#e9e9ed', fontVariantNumeric: 'tabular-nums' }}>{formatTime(time)}</strong>
               </div>
-              <input className="sun-range" type="range" min={Math.max(0, sun.sunrise)} max={Math.min(24, sun.sunset)} step=".05" value={time} onChange={e => { setTime(Number(e.target.value)); setPlaying(false); }} />
+              <input className="sun-range" type="range" min={sun.sunrise ?? 0} max={sun.sunset ?? 24} step=".05" value={time} disabled={!hasDaylight} onChange={e => { setTime(Number(e.target.value)); setPlaying(false); }} />
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: '#75798c', marginTop: 8 }}>
-                <span>{formatTime(sun.sunrise)} sunrise</span>
-                <span>{formatTime(sun.sunset)} sunset</span>
+                <span>{sun.polarDay ? 'midnight sun' : sun.polarNight ? 'no sunrise' : `${formatTime(sun.sunrise)} sunrise`}</span>
+                <span>{sun.polarDay ? '24 h daylight' : sun.polarNight ? 'no sunset' : `${formatTime(sun.sunset)} sunset`}</span>
               </div>
-              <button onClick={() => setPlaying(p => !p)} className="sf-btn-play" style={{ width: '100%', marginTop: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, fontSize: 14, color: '#9184d9', background: 'transparent', border: '1px solid #9184d9', borderRadius: 8, padding: '9px 12px' }}>
+              <button disabled={!hasDaylight} onClick={() => setPlaying(p => {
+                if (!p && time >= sun.sunset) setTime(sun.sunrise);
+                return !p;
+              })} className="sf-btn-play" style={{ width: '100%', marginTop: 17, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: hasDaylight ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 500, fontSize: 14, color: '#9184d9', background: 'transparent', border: '1px solid #9184d9', borderRadius: 8, padding: '9px 12px' }}>
                 {playing ? 'Pause sunlight' : 'Play sunlight'}
               </button>
             </div>
@@ -516,7 +543,7 @@ function App() {
           </aside>
 
           {/* House 3D */}
-          <div style={{ position: 'relative', minHeight: 660, borderRadius: 14, overflow: 'hidden', background: 'linear-gradient(160deg,#1d2032,#141625 72%)', boxShadow: '0 0 0 1px #3f424d' }}>
+          <div className="sf-house-panel" style={{ position: 'relative', minHeight: 660, borderRadius: 14, overflow: 'hidden', background: 'linear-gradient(160deg,#1d2032,#141625 72%)', boxShadow: '0 0 0 1px #3f424d' }}>
             <HouseScene orientation={orientation} sun={sun} latitude={latitude} month={month} day={day} />
             <div style={{ position: 'absolute', top: 17, left: 17, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, letterSpacing: '.12em', textTransform: 'uppercase', color: '#9397ab', pointerEvents: 'none' }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#9184d9', boxShadow: '0 0 10px #9184d9', animation: 'sunPulse 2.4s ease-in-out infinite', display: 'inline-block' }} />
@@ -533,12 +560,12 @@ function App() {
       </section>
 
       {/* Stats band */}
-      <section style={{ background: 'linear-gradient(120deg,#262a60,#353b80)', padding: 45 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 22 }}>
+      <section className="sf-stats" style={{ background: 'linear-gradient(120deg,#262a60,#353b80)', padding: 45 }}>
+        <div className="sf-stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 22 }}>
           {[
-            { label: 'Sunrise', value: formatTime(sun.sunrise) },
+            { label: 'Sunrise', value: sun.polarNight ? '—' : sun.polarDay ? '00:00' : formatTime(sun.sunrise) },
             { label: 'Solar noon', value: '12:00' },
-            { label: 'Sunset', value: formatTime(sun.sunset) },
+            { label: 'Sunset', value: sun.polarNight ? '—' : sun.polarDay ? '24:00' : formatTime(sun.sunset) },
             { label: 'Daylight', value: `${sun.daylight.toFixed(1)} h` }
           ].map(s => (
             <div key={s.label}>
@@ -550,7 +577,7 @@ function App() {
       </section>
 
       {/* Footer */}
-      <footer style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 22, padding: '34px 45px', fontSize: 11, letterSpacing: '.12em', textTransform: 'uppercase', color: '#75798c' }}>
+      <footer className="sf-footer">
         <span>sunface / 2026</span>
         <span>light is a place you can visit</span>
       </footer>
