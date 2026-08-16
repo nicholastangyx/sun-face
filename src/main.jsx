@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as topojson from 'topojson-client';
 import landTopo from 'world-atlas/land-110m.json';
 import './styles.css';
@@ -278,18 +279,20 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     grid.position.y = 0.004; grid.material.transparent = true; grid.material.opacity = 0.35; scene.add(grid);
 
     const house = new T.Group(); scene.add(house);
-    const wall = new T.Mesh(new T.BoxGeometry(2.8, 1.7, 2.3), new T.MeshStandardMaterial({ color: '#cfd3e5', roughness: 0.9 }));
-    wall.position.y = 0.95; wall.castShadow = true; wall.receiveShadow = true; house.add(wall);
-    const roof = new T.Mesh(new T.ConeGeometry(2.05, 1.25, 4), new T.MeshStandardMaterial({ color: '#5d5294', roughness: 0.8 }));
-    roof.rotation.y = Math.PI / 4; roof.position.y = 2.42; roof.castShadow = true; house.add(roof);
-    const door = new T.Mesh(new T.BoxGeometry(0.5, 0.9, 0.04), new T.MeshStandardMaterial({ color: '#423a6a' }));
-    door.position.set(0, 0.58, 1.17); house.add(door);
-    [-0.85, 0.85].forEach(x => {
-      const w = new T.Mesh(new T.BoxGeometry(0.52, 0.45, 0.04), new T.MeshStandardMaterial({ color: '#d2cefd', emissive: '#9184d9', emissiveIntensity: 0.35 }));
-      w.position.set(x, 1.2, 1.17); house.add(w);
-    });
-    const facing = new T.Mesh(new T.ConeGeometry(0.14, 0.4, 3), new T.MeshBasicMaterial({ color: '#9184d9' }));
-    facing.rotation.x = Math.PI / 2; facing.position.set(0, 0.06, 2.2); house.add(facing);
+    new GLTFLoader().load('/models/large-building.glb', ({ scene: building }) => {
+      building.updateMatrixWorld(true);
+      const bounds = new T.Box3().setFromObject(building);
+      const size = bounds.getSize(new T.Vector3());
+      const center = bounds.getCenter(new T.Vector3());
+      building.position.set(-center.x, -bounds.min.y, -center.z);
+      building.scale.setScalar(4.5 / Math.max(size.x, size.z));
+      building.traverse(node => {
+        if (!node.isMesh) return;
+        node.castShadow = true;
+        node.receiveShadow = true;
+      });
+      house.add(building);
+    }, undefined, error => console.error('Unable to load building model', error));
 
     const compass = new T.Mesh(new T.RingGeometry(3.5, 3.53, 64), new T.MeshBasicMaterial({ color: '#9184d9', transparent: true, opacity: 0.42, side: T.DoubleSide }));
     compass.rotation.x = -Math.PI / 2; compass.position.y = 0.012; scene.add(compass);
@@ -306,6 +309,7 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     scene.add(sunMesh);
     const glow = new T.Mesh(new T.SphereGeometry(0.42, 20, 20), new T.MeshBasicMaterial({ color: '#9184d9', transparent: true, opacity: 0.22 }));
     scene.add(glow);
+
 
     const cam = { theta: Math.atan2(5.6, 6.6), phi: 0.55, dist: 9.6 };
     const placeCamera = () => {
@@ -328,6 +332,12 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
       px = e.clientX; py = e.clientY; placeCamera();
     };
     el.onpointerup = e => { el.style.cursor = 'grab'; el.releasePointerCapture(e.pointerId); };
+    const zoom = e => {
+      e.preventDefault();
+      cam.dist = THREE.MathUtils.clamp(cam.dist + e.deltaY * 0.012, 5.5, 16);
+      placeCamera();
+    };
+    el.addEventListener('wheel', zoom, { passive: false });
 
     const resize = () => {
       if (!el.clientWidth) return;
@@ -346,6 +356,13 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     return () => {
       cancelAnimationFrame(ctx.current.animFrame);
       resizeObserver.disconnect();
+      el.removeEventListener('wheel', zoom);
+      house.traverse(node => {
+        if (!node.isMesh) return;
+        node.geometry.dispose();
+        const materials = Array.isArray(node.material) ? node.material : [node.material];
+        materials.forEach(material => material.dispose());
+      });
       renderer.dispose();
       if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement);
     };
