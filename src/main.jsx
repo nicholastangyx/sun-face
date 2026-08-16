@@ -147,4 +147,56 @@ function App() {
   return <main><header><div className="brand"><span className="brand-mark">◒</span><span>SUNFACE</span></div><span className="eyebrow">a small instrument for understanding light</span></header>{!location ? <section className="landing"><div className="intro"><p className="kicker">01 / choose a place</p><h1>Where does<br /><em>the light</em> land?</h1><p className="lead">Pick a point on Earth. Then turn a house, turn the year, and watch the sun move through it.</p><div className="hint"><span>↗</span> drag to rotate · click to select</div></div><div className="globe-panel"><Globe onSelect={setLocation} /><div className="globe-caption"><span>earth / 3D</span><span>latitude + longitude</span></div></div></section> : <section className="simulator"><div className="sim-header"><div><p className="kicker">02 / study the light</p><h2>{location.latitude.toFixed(2)}° {location.latitude >= 0 ? 'N' : 'S'} <span>·</span> {Math.abs(location.longitude).toFixed(2)}° {location.longitude >= 0 ? 'E' : 'W'}</h2></div><div className="date-chip">{months[month - 1]} {day}</div></div><HouseScene state={{ orientation }} sun={sun} onBack={() => setLocation(null)} /><aside className="controls"><div className="control-block"><label>day of the year</label><div className="date-row"><select value={month} onChange={e => chooseDate(e.target.value)}>{months.map((m, i) => <option value={i + 1} key={m}>{m}</option>)}</select><input type="number" min="1" max={monthDays[month - 1]} value={day} onChange={e => { setDay(Math.max(1, Math.min(monthDays[month - 1], Number(e.target.value)))); setTime(12); }} /></div></div><div className="control-block"><label>house facing</label><div className="direction-grid">{directions.map(d => <button className={orientation === d ? 'selected' : ''} onClick={() => setOrientation(d)} key={d}>{d}</button>)}</div></div><div className="control-block time-block"><div className="time-heading"><label>solar time</label><strong>{formatTime(time)}</strong></div><input className="range" type="range" min={Math.max(0, sun.sunrise)} max={Math.min(24, sun.sunset)} step=".05" value={time} onChange={e => { setTime(Number(e.target.value)); setPlaying(false); }} /><div className="range-labels"><span>{formatTime(sun.sunrise)} sunrise</span><span>{formatTime(sun.sunset)} sunset</span></div><button className="play" onClick={() => setPlaying(!playing)}>{playing ? 'Ⅱ  pause sunlight' : '▶  play sunlight'}</button></div><div className="metrics"><div><span>sun altitude</span><strong>{Math.max(0, sun.elevation).toFixed(1)}°</strong></div><div><span>sun direction</span><strong>{Math.round(sun.azimuth)}°</strong></div><div><span>daylight</span><strong>{sun.daylight.toFixed(1)} hrs</strong></div></div><p className="note">Times shown are local solar time. This is an educational model — real shade also depends on trees, terrain, windows and weather.</p></aside></section>}<footer><span>sunface / 2026</span><span>light is a place you can visit</span></footer></main>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+function AppDesigned() {
+  const [location, setLocation] = useState(null);
+  const [month, setMonth] = useState(1);
+  const [day, setDay] = useState(15);
+  const [orientation, setOrientation] = useState('S');
+  const [time, setTime] = useState(12);
+  const [playing, setPlaying] = useState(false);
+  const latitude = location?.latitude ?? 51.5;
+  const longitude = location?.longitude ?? -0.1;
+  const sun = useMemo(() => sunAt(latitude, longitude, month, day, time), [latitude, longitude, month, day, time]);
+  useEffect(() => {
+    if (!playing) return undefined;
+    const id = setInterval(() => setTime((current) => {
+      const next = current + 0.05;
+      if (next >= sun.sunset) { setPlaying(false); return sun.sunset; }
+      return next;
+    }), 50);
+    return () => clearInterval(id);
+  }, [playing, sun.sunset]);
+  const chooseDate = (value) => {
+    const nextMonth = Number(value);
+    setMonth(nextMonth);
+    setDay(Math.min(day, monthDays[nextMonth - 1]));
+    setTime(12);
+  };
+  const resetLocation = () => { setLocation(null); setPlaying(false); };
+  const coordLabel = location ? `${location.latitude.toFixed(2)}° ${location.latitude >= 0 ? 'N' : 'S'} · ${Math.abs(location.longitude).toFixed(2)}° ${location.longitude >= 0 ? 'E' : 'W'}` : 'no location picked';
+  const facingCells = ['NW', 'N', 'NE', 'W', 'facing', 'E', 'SW', 'S', 'SE'];
+
+  return <main id="top">
+    <header>
+      <div className="brand"><span className="brand-mark">◒</span><span>SUNFACE</span></div>
+      <div className="header-actions"><span className="nav-status">{coordLabel}</span><button className="header-cta" onClick={() => location ? resetLocation() : document.getElementById('location-picker')?.scrollIntoView({ behavior: 'smooth' })}>{location ? 'Change the place' : 'Study the light'}</button></div>
+    </header>
+    {!location ? <section className="landing" id="location-picker">
+      <div className="intro"><p className="kicker">01 / choose a place</p><h1>Where does <span className="accent-word">the light</span> land?</h1><p className="lead">Pick a point on Earth. Then turn a house, turn the year, and watch the sun move through it.</p><div className="hint"><span className="hint-line" /> drag to rotate · click to select</div></div>
+      <div className="globe-panel"><Globe onSelect={setLocation} /><div className="globe-caption"><span>earth / 3D</span><span>latitude + longitude</span></div></div>
+    </section> : <section className="simulator" id="study">
+      <div className="sim-header"><div><p className="kicker">02 / study the light</p><h2>{coordLabel}</h2></div><div className="date-chip">{months[month - 1]} {day}</div></div>
+      <aside className="controls">
+        <div className="control-block"><label>day of the year</label><div className="date-row"><select value={month} onChange={e => chooseDate(e.target.value)}>{months.map((m, i) => <option value={i + 1} key={m}>{m}</option>)}</select><input type="number" min="1" max={monthDays[month - 1]} value={day} onChange={e => { setDay(Math.max(1, Math.min(monthDays[month - 1], Number(e.target.value)))); setTime(12); }} /></div></div>
+        <div className="control-block"><label>house facing</label><div className="direction-grid designed-direction-grid">{facingCells.map((cell, index) => cell === 'facing' ? <div className="facing-readout" key={cell}><span>facing</span><strong>{orientation}</strong></div> : <button className={orientation === cell ? 'selected' : ''} onClick={() => setOrientation(cell)} key={`${cell}-${index}`}>{cell}</button>)}</div></div>
+        <div className="control-block time-block"><div className="time-heading"><label>solar time</label><strong>{formatTime(time)}</strong></div><input className="range" type="range" min={Math.max(0, sun.sunrise)} max={Math.min(24, sun.sunset)} step=".05" value={time} onChange={e => { setTime(Number(e.target.value)); setPlaying(false); }} /><div className="range-labels"><span>{formatTime(sun.sunrise)} sunrise</span><span>{formatTime(sun.sunset)} sunset</span></div><button className="play" onClick={() => setPlaying(!playing)}>{playing ? 'Ⅱ  pause sunlight' : '▶  play sunlight'}</button></div>
+        <div className="metrics"><div><span>sun altitude</span><strong>{Math.max(0, sun.elevation).toFixed(1)}°</strong></div><div><span>sun direction</span><strong>{Math.round(sun.azimuth)}°</strong></div><div><span>daylight</span><strong>{sun.daylight.toFixed(1)} hrs</strong></div></div>
+        <p className="note">Local solar time. An educational model — real shade also depends on trees, terrain, windows and weather.</p>
+      </aside>
+      <HouseScene state={{ orientation }} sun={sun} onBack={resetLocation} />
+    </section>}
+    <footer><span>sunface / 2026</span><span>light is a place you can visit</span></footer>
+  </main>;
+}
+
+createRoot(document.getElementById('root')).render(<AppDesigned />);

@@ -5,3 +5,5 @@ dist
 .bun-temp
 vite.log
 vite.error.log
+.design-reference
+web_design.zip
