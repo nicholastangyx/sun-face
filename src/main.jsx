@@ -1,21 +1,14 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import * as topojson from 'topojson-client';
+import landTopo from 'world-atlas/land-110m.json';
 import './styles.css';
 
 const DIRECTIONS = ['N','NE','E','SE','S','SW','W','NW'];
 const CELL = { N:'1/2', NE:'1/3', E:'2/3', SE:'3/3', S:'3/2', SW:'3/1', W:'2/1', NW:'1/1' };
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_DAYS = [31,28,31,30,31,30,31,31,30,31,30,31];
-const LAND = [
-  [[72,-165],[70,-140],[60,-130],[52,-125],[48,-123],[35,-117],[25,-105],[18,-92],[28,-82],[45,-82],[52,-60],[62,-65],[70,-85]],
-  [[12,-81],[5,-78],[-5,-80],[-18,-72],[-35,-70],[-55,-68],[-52,-58],[-35,-52],[-12,-45],[5,-50],[12,-62]],
-  [[72,-10],[70,25],[62,40],[52,32],[48,20],[42,28],[36,18],[38,5],[44,-8],[55,-5],[62,-20]],
-  [[36,-17],[36,10],[32,32],[22,42],[5,50],[-15,45],[-35,28],[-35,12],[-25,-5],[-5,-15],[16,-17]],
-  [[72,35],[70,90],[62,145],[52,160],[42,142],[28,135],[10,120],[8,95],[20,75],[32,55],[45,38],[58,30]],
-  [[-12,114],[-16,145],[-28,153],[-40,145],[-42,120],[-30,112]],
-  [[82,-72],[76,-42],[62,-45],[60,-65],[70,-75]]
-];
 const TONES = { Golden: '#fff0bf', Neutral: '#e4e7f5', Blurple: '#b5abfc' };
 
 function dayOfYear(m, d) {
@@ -44,14 +37,24 @@ function gpt(la, lo, rad) {
   return new THREE.Vector3(Math.cos(a) * Math.cos(b) * rad, Math.sin(a) * rad, Math.cos(a) * Math.sin(b) * rad);
 }
 
-function buildLandMesh(points) {
-  const c = points.reduce((s, p) => ({ lat: s.lat + p[0], lon: s.lon + p[1] }), { lat: 0, lon: 0 });
-  c.lat /= points.length; c.lon /= points.length;
+// Shared land material (created once, reused for all polygons)
+const LAND_MAT = new THREE.MeshStandardMaterial({ color: '#8b7fd0', roughness: 0.7, metalness: 0.04, side: THREE.DoubleSide });
+
+// Build a sphere-projected mesh from a GeoJSON ring [[lon,lat], ...]
+function geoRingMesh(ring) {
+  if (ring.length < 3) return null;
+  // Centre the ring to reduce floating-point spread inside ShapeGeometry
+  let clon = 0, clat = 0;
+  ring.forEach(([lon, lat]) => { clon += lon; clat += lat; });
+  clon /= ring.length; clat /= ring.length;
   const shape = new THREE.Shape();
-  points.forEach((p, i) => { const x = p[1] - c.lon, y = p[0] - c.lat; if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y); });
-  shape.closePath();
+  ring.forEach(([lon, lat], i) => {
+    if (i === 0) shape.moveTo(lon - clon, lat - clat);
+    else shape.lineTo(lon - clon, lat - clat);
+  });
+  // Triangulate in lon/lat space then subdivide so every vertex lands on the sphere
   let tri = Array.from(new THREE.ShapeGeometry(shape).toNonIndexed().attributes.position.array);
-  for (let pass = 0; pass < 4; pass++) {
+  for (let pass = 0; pass < 3; pass++) {
     const next = [];
     for (let i = 0; i < tri.length; i += 9) {
       const a = [tri[i], tri[i+1]], b = [tri[i+3], tri[i+4]], d = [tri[i+6], tri[i+7]];
@@ -62,14 +65,30 @@ function buildLandMesh(points) {
   }
   const out = [], nrm = [];
   for (let i = 0; i < tri.length; i += 3) {
-    const v = gpt(c.lat + tri[i+1], c.lon + tri[i], 1.385);
-    const n = v.clone().normalize();
-    out.push(v.x, v.y, v.z); nrm.push(n.x, n.y, n.z);
+    const v = gpt(tri[i+1] + clat, tri[i] + clon, 1.385); // gpt(lat, lon, r)
+    out.push(v.x, v.y, v.z); nrm.push(...v.clone().normalize().toArray());
   }
+  if (out.length === 0) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#8b7fd0', roughness: 0.7, metalness: 0.04, side: THREE.DoubleSide }));
+  return new THREE.Mesh(geo, LAND_MAT);
+}
+
+// Decode TopoJSON land-110m → Three.js meshes added to a Group
+function buildLandGroup() {
+  const group = new THREE.Group();
+  const landFC = topojson.feature(landTopo, landTopo.objects.land);
+  const features = landFC.type === 'FeatureCollection' ? landFC.features : [landFC];
+  features.forEach(({ geometry }) => {
+    if (!geometry) return;
+    const polys = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+    polys.forEach(([outerRing]) => {
+      const mesh = geoRingMesh(outerRing);
+      if (mesh) group.add(mesh);
+    });
+  });
+  return group;
 }
 
 function sunPos(elevDeg, aziDeg, d) {
@@ -100,7 +119,7 @@ function Globe({ location, onSelect }) {
       new T.MeshStandardMaterial({ color: '#1a1c2a', roughness: 0.95, metalness: 0.02 })
     );
     group.add(globe);
-    LAND.forEach(points => group.add(buildLandMesh(points)));
+    group.add(buildLandGroup());
     group.add(new T.Mesh(
       new T.SphereGeometry(1.46, 48, 32),
       new T.MeshBasicMaterial({ color: '#9184d9', transparent: true, opacity: 0.1, side: T.BackSide })

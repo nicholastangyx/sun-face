@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "three": "latest"
+    "three": "latest",
+    "topojson-client": "^3.1.0",
+    "vite": "latest",
+    "world-atlas": "^2.0.2"
   },
   "devDependencies": {}
 }
