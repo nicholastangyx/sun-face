@@ -91,6 +91,7 @@ function Globe({ location, onSelect }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(el.clientWidth, el.clientHeight);
     renderer.outputColorSpace = T.SRGBColorSpace;
+    renderer.domElement.style.display = 'block';
     el.appendChild(renderer.domElement);
 
     const group = new T.Group();
@@ -130,10 +131,19 @@ function Globe({ location, onSelect }) {
 
     const frameGlobe = () => {
       const half = Math.tan(T.MathUtils.degToRad(camera.fov) / 2);
-      camera.position.setLength(1.62 / Math.min(half, half * camera.aspect));
+      // 1.50 = just above atmosphere radius (1.46) — globe fills the panel closely
+      camera.position.setLength(1.50 / Math.min(half, half * camera.aspect));
       camera.lookAt(0, 0, 0);
     };
     frameGlobe();
+    // Re-frame after first paint in case layout dimensions settled
+    requestAnimationFrame(() => {
+      if (!el.clientWidth) return;
+      camera.aspect = el.clientWidth / el.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(el.clientWidth, el.clientHeight);
+      frameGlobe();
+    });
 
     ctx.current = { scene, camera, renderer, group, globe, grat, marker, halo, spin: true };
 
@@ -218,6 +228,7 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     renderer.setSize(el.clientWidth, el.clientHeight);
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = T.PCFSoftShadowMap;
     renderer.outputColorSpace = T.SRGBColorSpace;
+    renderer.domElement.style.display = 'block';
     el.appendChild(renderer.domElement);
 
     scene.add(new T.HemisphereLight('#b2b6ca', '#161826', 0.75));
