@@ -279,7 +279,7 @@ function HouseScene({ orientation, sun, latitude, month, day }) {
     grid.position.y = 0.004; grid.material.transparent = true; grid.material.opacity = 0.35; scene.add(grid);
 
     const house = new T.Group(); scene.add(house);
-    new GLTFLoader().load('/models/large-building.glb', ({ scene: building }) => {
+    new GLTFLoader().load(`${import.meta.env.BASE_URL}models/large-building.glb`, ({ scene: building }) => {
       building.updateMatrixWorld(true);
       const bounds = new T.Box3().setFromObject(building);
       const size = bounds.getSize(new T.Vector3());
